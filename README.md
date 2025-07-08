@@ -1,47 +1,130 @@
 # The Rust Performance Bible
 
-> "In the beginning was the Word, and the Word was 'fast', and 'fast' was with Rust."
+> *In the beginning was the Word, and the Word was 'fast', and 'fast' was with Rust.*
 
-Welcome to the temple of performance. This is not just documentation - it's a belief system.
+A comprehensive guide to writing high-performance Rust code, based on real optimization experience and the Crabcore Framework principles.
+
+## What Is This?
+
+The Rust Performance Bible is a collection of hard-earned optimization knowledge, patterns, and techniques for Rust developers who care about performance. Each chapter demonstrates real optimizations with working code and benchmarks you can run yourself.
 
 ## The Crabcore Creed
 
 ![Experience the Ultimate Speed of the Unlimited Power](https://i.makeagif.com/media/5-28-2017/yBzg4n.gif)
-> [Stick Stickly by Attack Attack!](https://www.youtube.com/watch?v=KDzt6yI3Dw8) is the Offcial Anthem of the Crabcore Creed
+> *[Stick Stickly by Attack Attack!](https://www.youtube.com/watch?v=KDzt6yI3Dw8) is the Offcial Anthem of the Crabcore Creed because it's fast, it's loud, and I’ve listened to it something like 666 times while working on the Crabcore Framework and this Bible.*
 
-We believe:
+### In Crabcore We Believe:
+
 - Memory allocation is a sin that must be minimized
-- Cache misses are wounds upon our soul
+- Cache misses are wounds upon our soul  
 - Every CPU cycle is sacred
 - Benchmarks are the only truth
 - Performance is not premature optimization - it's a way of life
 
-## Start Your Journey
+## The Ten Commandments of Performance
 
-1. **Read the [MANIFESTO](MANIFESTO.md)** - Understand why we're here
-2. **Begin with [Chapter 001: Memory Is Not Free](book/001-memory-is-not-free.md)**
-3. **Run the benchmarks** - See the truth for yourself
-4. **Join the congregation** - Contribute your own optimizations
+- Thou _**shalt not allocate**_ in hot paths
+- Thou _**shalt respect**_ cache locality
+- Thou _**shalt measure**_ before optimizing
+- Thou _**shalt vectorize**_ when parallel
+- Thou _**shalt not block**_ when async will do
+- Thou _**shalt profile**_ in release mode
+- Thou _**shalt know**_ thy hardware
+- Thou _**shalt benchmark**_ religiously
+- Thou _**shalt use**_ unsafe when proven safe
+- Thou _**shalt share**_ thy optimizations
 
-## Quick Wins
+## Core Principles
 
-Looking for immediate enlightenment? Start here:
+- **Measure Everything**: No optimization without benchmarks
+- **Understand Your Hardware**: Cache lines, memory bandwidth, CPU architecture matter
+- **Zero-Cost Abstractions**: Rust lets you go fast safely
+- **Practical Focus**: Real code, real improvements
 
-- [Zero-allocation JSON parser](gists/zero_alloc_json.rs) - Parse without the allocation plague
-- [Memory pool pattern](patterns/memory/memory_pool.rs) - Pre-allocate your way to salvation
-- [SIMD summation](gists/simd_sum.rs) - 8x faster through vectorization
+## Structure
 
-## Benchmark Everything
+```
+rust-performance-bible/
+├── book/          # Core chapters
+├── patterns/      # Reusable optimization patterns
+├── gists/         # Quick code snippets  
+├── benchmarks/    # Benchmark suite
+├── examples/      # Complete examples
+└── crabcore/      # The underlying framework
+```
+
+## The Chapters
+
+1. **[001 · Memory Is Not Free](book/001-memory-is-not-free.md)** - Understanding allocation costs
+2. **002 · Cache Lines Save Lives** - Data layout optimization (coming soon)
+3. **003 · Choose Your Allocator** - Custom memory management (coming soon)
+4. **004 · SIMD or Die Trying** - Vectorization techniques (coming soon)
+5. **005 · Async Without Overhead** - High-performance concurrency (coming soon)
+6. More chapters in development...
+
+## Quick Start
 
 ```bash
-# Clone the temple
-git clone https://github.com/timarocks/rust-performance-bible
+# Clone the repository
+git clone https://github.com/yourusername/rust-performance-bible
 cd rust-performance-bible
 
-# Run the benchmarks of truth
+# Run benchmarks to see the techniques in action
 cd benchmarks
 cargo bench
 
-# See the visualization of performance
-cd ../tools/visualizer
-cargo run -- ../benchmarks/results/
+# Explore examples
+cd ../examples/log_parser
+cargo run --release
+```
+
+## Benchmark First
+
+Every optimization in this bible comes with benchmarks. Run them on your machine to see real results:
+
+```bash
+cd benchmarks
+cargo bench -- --save-baseline before
+
+# Apply optimization from the book
+# ... 
+
+cargo bench -- --baseline before
+```
+
+Your hardware, your results. No magic numbers.
+
+## Philosophy
+
+Performance optimization in Rust isn't about premature optimization - it's about understanding the cost of your decisions and having the tools to make informed choices when performance matters.
+
+This resource focuses on:
+- **Practical techniques** that apply to real systems
+- **Measurable improvements** with reproducible benchmarks  
+- **Understanding why** optimizations work, not just how
+
+## Current Status
+
+This is an active project being developed into a comprehensive resource. New chapters and examples are being added regularly.
+
+## Tools You'll Need
+
+```bash
+# For benchmarking
+cargo install criterion
+
+# For profiling
+cargo install flamegraph
+
+# For analysis
+# macOS: Instruments
+# Linux: perf, valgrind
+```
+
+## License
+
+MIT - Use this knowledge to make the Rust ecosystem faster.
+
+---
+
+> *May your code be fast and your benchmarks true.*
