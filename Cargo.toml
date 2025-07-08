@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "benchmarks",
+    # Add other workspace members here if needed
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70.0"
+
+exclude = [
+    "**/target",
+    "**/Cargo.lock",
+    "**/*.rs.bk"
+]
