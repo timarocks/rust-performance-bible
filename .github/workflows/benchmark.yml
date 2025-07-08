@@ -1,0 +1,277 @@
+name: Benchmark Suite
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'benchmarks/**'
+      - 'src/**'
+      - 'patterns/**'
+      - 'Cargo.toml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Baseline branch/tag to compare against'
+        required: false
+        default: 'main'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-C target-cpu=native"
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable, nightly]
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for comparisons
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Install benchmark tools
+      run: |
+        cargo install cargo-criterion --locked
+        cargo install cargo-flamegraph --locked
+        
+    - name: Install system dependencies (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y linux-tools-common linux-tools-generic
+        sudo apt-get install -y valgrind
+        
+    - name: Run benchmarks
+      run: |
+        cd benchmarks
+        cargo criterion --message-format=json > ../benchmark-results.json
+        
+    - name: Generate benchmark report
+      run: |
+        mkdir -p benchmark-report
+        cp -r benchmarks/target/criterion benchmark-report/
+        
+    - name: Compare with baseline (PR only)
+      if: github.event_name == 'pull_request'
+      run: |
+        git checkout ${{ github.base_ref }}
+        cd benchmarks
+        cargo criterion --message-format=json > ../baseline-results.json
+        cd ..
+        
+        # Simple comparison script (you'd want something more sophisticated)
+        echo "## Benchmark Comparison" > benchmark-comparison.md
+        echo "| Benchmark | Baseline | PR | Change |" >> benchmark-comparison.md
+        echo "|-----------|----------|----|---------| " >> benchmark-comparison.md
+        # Add actual comparison logic here
+        
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-${{ matrix.os }}-${{ matrix.rust }}
+        path: |
+          benchmark-results.json
+          benchmark-report/
+          benchmark-comparison.md
+        retention-days: 30
+    
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const comparison = fs.readFileSync('benchmark-comparison.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comparison
+          });
+
+  profile:
+    name: Performance Profiling
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install profiling tools
+      run: |
+        cargo install flamegraph --locked
+        cargo install cargo-bloat --locked
+        sudo apt-get update
+        sudo apt-get install -y linux-tools-common linux-tools-generic
+        
+    - name: Generate flamegraphs
+      run: |
+        cd benchmarks
+        cargo flamegraph --bench memory_patterns -- --bench
+        mkdir -p ../profiles
+        mv flamegraph.svg ../profiles/memory_patterns_flame.svg
+        
+    - name: Analyze binary size
+      run: |
+        cd benchmarks
+        cargo bloat --release --crates > ../profiles/bloat_analysis.txt
+        
+    - name: Upload profiles
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-profiles
+        path: profiles/
+        retention-days: 90
+
+  benchmark-history:
+    name: Track Benchmark History
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: gh-pages
+        
+    - name: Download current results
+      uses: actions/download-artifact@v4
+      with:
+        name: benchmark-results-ubuntu-latest-stable
+        
+    - name: Update benchmark history
+      run: |
+        mkdir -p benchmark-history
+        DATE=$(date +%Y-%m-%d-%H-%M-%S)
+        cp benchmark-results.json benchmark-history/results-$DATE.json
+        
+        # Generate index
+        echo "# Benchmark History" > benchmark-history/index.md
+        echo "" >> benchmark-history/index.md
+        for file in benchmark-history/results-*.json; do
+          echo "- [$(basename $file)]($file)" >> benchmark-history/index.md
+        done
+        
+    - name: Commit and push
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add benchmark-history/
+        git commit -m "Update benchmark history: $DATE"
+        git push
+
+  benchmark-dashboard:
+    name: Generate Performance Dashboard
+    runs-on: ubuntu-latest
+    needs: [benchmark, profile]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Install Python dependencies
+      run: |
+        pip install matplotlib pandas plotly
+        
+    - name: Generate dashboard
+      run: |
+        mkdir -p docs/benchmarks
+        
+        cat > generate_dashboard.py << 'EOF'
+        import json
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        from datetime import datetime
+        
+        # Load benchmark results
+        with open('benchmark-results-ubuntu-latest-stable/benchmark-results.json', 'r') as f:
+            data = json.load(f)
+        
+        # Generate plots
+        fig, ax = plt.subplots(figsize=(10, 6))
+        # Add your plotting logic here
+        plt.title('Rust Performance Bible - Benchmark Results')
+        plt.savefig('docs/benchmarks/latest_results.png')
+        
+        # Generate HTML report
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Rust Performance Bible - Benchmarks</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+                .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+                h1 {{ color: #c55423; }}
+                .metric {{ background: #f0f0f0; padding: 10px; margin: 10px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Rust Performance Bible - Benchmark Dashboard</h1>
+                <p>Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
+                
+                <h2>Latest Results</h2>
+                <img src="latest_results.png" alt="Benchmark Results">
+                
+                <h2>Performance Profiles</h2>
+                <ul>
+                    <li><a href="../profiles/memory_patterns_flame.svg">Memory Patterns Flamegraph</a></li>
+                    <li><a href="../profiles/bloat_analysis.txt">Binary Size Analysis</a></li>
+                </ul>
+                
+                <h2>Historical Trends</h2>
+                <p>View <a href="../benchmark-history/">full benchmark history</a></p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open('docs/benchmarks/index.html', 'w') as f:
+            f.write(html)
+        EOF
+        
+        python generate_dashboard.py
+        
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
