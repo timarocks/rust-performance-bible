@@ -371,4 +371,6 @@ fn main() {
 
 *Remember: The allocator is not your friend. It's a necessary evil. Minimize contact.*
 
-**Benchmark this code yourself and share your results in the [Crabcore community](https://github.com/crabcore/discussions)!**
+### Tima's Benchmark Algorithm
+
+See [BENCHMARK_ALGORITHM.md](benchmarks/BENCHMARK_ALGORITHM.md) for details.

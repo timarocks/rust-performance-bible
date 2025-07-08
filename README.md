@@ -94,6 +94,10 @@ cargo bench -- --baseline before
 
 Your hardware, your results. No magic numbers.
 
+### Tima's Benchmark Algorithm
+
+See [BENCHMARK_ALGORITHM.md](benchmarks/BENCHMARK_ALGORITHM.md) for details.
+
 ## Philosophy
 
 Performance optimization in Rust isn't about premature optimization - it's about understanding the cost of your decisions and having the tools to make informed choices when performance matters.
