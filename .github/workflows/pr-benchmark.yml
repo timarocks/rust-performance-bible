@@ -2,11 +2,12 @@ name: PR Benchmark Check
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
     paths:
-      - 'book/001-memory-is-not-free/**'
+      - 'book/**'
       - '.github/workflows/pr-benchmark.yml'
       - 'Cargo.toml'
+      - 'Cargo.lock'
 
 permissions:
   contents: read

@@ -4,11 +4,17 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'book/001-memory-is-not-free/**'
+      - 'book/**'
       - '.github/workflows/benchmark.yml'
       - 'Cargo.toml'
+      - 'Cargo.lock'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'book/**'
+      - '.github/workflows/benchmark.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   workflow_dispatch:
     inputs:
       baseline:
