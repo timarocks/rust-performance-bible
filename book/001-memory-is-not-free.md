@@ -2,6 +2,9 @@
 
 *"Every allocation is a negotiation with the operating system. Stop negotiating." - The Crabcore Way*
 
+> **Latest Benchmarks**: [View Benchmark Results](./001-memory-is-not-free/bench-logs/BENCH_LOG_08072025.md)  
+> **Code Examples**: [Naive Implementation](./001-memory-is-not-free/code/naive.rs) | [Optimized Implementation](./001-memory-is-not-free/code/optimized.rs)
+
 ---
 
 ## The Problem
@@ -24,18 +27,20 @@ At scale, these microseconds become seconds, and your service falls over.
 Here's what most developers write - clean, idiomatic, and catastrophically slow:
 
 ```rust
+// See full implementation: [naive.rs](./001-memory-is-not-free/code/naive.rs)
+
 #[derive(Debug)]
 struct LogEntry {
-    timestamp: String,
-    level: String,
-    message: String,
-    metadata: HashMap<String, String>,
+    timestamp: String,      // ALLOCATION!
+    level: String,         // ALLOCATION!
+    message: String,       // ALLOCATION!
+    metadata: HashMap<String, String>,  // MULTIPLE ALLOCATIONS!
 }
 
 fn parse_logs(input: &str) -> Vec<LogEntry> {
     input
         .lines()
-        .filter_map(|line| parse_single_log(line))
+        .filter_map(|line| parse_single_log(line))  // COLLECTION ALLOCATION!
         .collect()
 }
 

@@ -4,9 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize]
     paths:
-      - 'src/**'
-      - 'patterns/**'
-      - 'benchmarks/**'
+      - 'book/001-memory-is-not-free/**'
+      - '.github/workflows/pr-benchmark.yml'
       - 'Cargo.toml'
 
 permissions:
@@ -35,14 +34,14 @@ jobs:
     - name: Run baseline benchmarks
       run: |
         git checkout ${{ github.event.pull_request.base.sha }}
-        cd benchmarks
-        cargo bench --bench memory_patterns -- --save-baseline pr-base
+        cd book/001-memory-is-not-free
+        cargo bench -- --save-baseline pr-base
     
     - name: Run PR benchmarks
       run: |
         git checkout ${{ github.event.pull_request.head.sha }}
-        cd benchmarks
-        cargo bench --bench memory_patterns -- --baseline pr-base --output-format bencher | tee pr-bench-output.txt
+        cd book/001-memory-is-not-free
+        cargo bench -- --baseline pr-base --output-format bencher | tee pr-bench-output.txt
     
     - name: Parse benchmark results
       id: bench

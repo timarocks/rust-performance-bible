@@ -1,53 +1,180 @@
-# The Crabcore Benchmark Algorithm
+# The CrabCore Benchmark Algorithm
 
-A systematic approach to performance analysis that ensures reproducible, thorough benchmarking without overwhelming the developer.
+A systematic, ethical approach to performance analysis that ensures reproducible, thorough benchmarking while maintaining transparency and scientific rigor.
 
 ## Overview
 
-Benchmarking is not about running random performance tests. It's about systematic measurement, analysis, and documentation. This algorithm provides a structured approach that takes approximately 1 hour per optimization variant.
+Benchmarking is not about running random performance tests. It's about systematic measurement, analysis, and documentation following the [AI Guidance Protocol](../docs/AI_GUIDANCE_PROTOCOL.md). This algorithm provides a structured approach that ensures:
+
+1. **Reproducibility**: All tests can be exactly reproduced
+2. **Transparency**: Full disclosure of methodology and environment
+3. **Fair Comparison**: Apples-to-apples comparison between implementations
+4. **Actionable Insights**: Clear, practical recommendations
+
+## Ethical Considerations
+
+1. **Bias Mitigation**: Actively work to identify and mitigate biases in test data and methodology
+2. **Resource Awareness**: Be mindful of computational resource usage
+3. **Honest Reporting**: Present both strengths and limitations of the analysis
+4. **Privacy Protection**: Ensure no sensitive data is included in benchmarks
 
 ## Prerequisites
 
-Ensure these tools are installed:
+### Required Tools
 
 ```bash
-# Essential benchmarking tools
-cargo install criterion
-cargo install flamegraph
-cargo install cargo-bloat
+# Core benchmarking
+cargo install criterion \
+    --features html_reports \
+    --locked
 
-# Platform-specific profilers
-# macOS: Instruments (comes with Xcode)
-# Linux: perf, valgrind
+# Performance analysis
+cargo install flamegraph \
+    cargo-bloat \
+    cargo-asm
+
+# System monitoring
+cargo install heaptrack \
+    cargo-llvm-cov \
+    cargo-audit
+
+# Quality control
+cargo install cargo-udeps \
+    cargo-geiger
 ```
 
-## The Six-Phase Algorithm
+### Environment Setup
 
-### Phase 1: Setup (5 minutes)
-
-**Goal**: Prepare your benchmark environment with realistic test scenarios.
-
-1. **Create benchmark file**
-   ```rust
-   // benchmarks/benches/your_feature.rs
-   use criterion::{black_box, criterion_group, criterion_main, Criterion};
+1. **Hardware Monitoring**:
+   ```bash
+   # Linux
+   sudo apt install lm-sensors hwloc
+   
+   # macOS
+   brew install osx-cpu-temp
    ```
 
-2. **Import implementations**
-   ```rust
-   // Import both naive and optimized versions
-   mod naive;
-   mod optimized;
+2. **System Configuration**:
+   - Disable CPU frequency scaling
+   - Disable turbo boost during measurements
+   - Run in single-user mode for consistent results
+
+## The CrabCore Benchmark Methodology
+
+### 1. Benchmark Design (15 min)
+
+**Goal**: Define clear, measurable objectives and methodology.
+
+1. **Define Success Metrics**:
+   ```markdown
+   - [ ] Throughput (ops/sec)
+   - [ ] Latency (p50, p90, p99, p999)
+   - [ ] Memory usage (peak RSS, allocations)
+   - [ ] Cache efficiency (L1/L2/L3 hit rates)
+   - [ ] Instruction-level parallelism
    ```
 
-3. **Generate test data**
+2. **Create Benchmark Suite**
    ```rust
-   fn generate_test_data() -> TestData {
-       // Create realistic data that covers:
-       // - Common cases (80%)
-       // - Edge cases (15%)
-       // - Pathological cases (5%)
+   // book/001-memory-is-not-free/benches/memory_patterns.rs
+   use criterion::{criterion_group, criterion_main, Criterion};
+   use std::hint::black_box;
+   
+   // Import implementations
+   mod implementations {
+       pub mod naive;
+       pub mod optimized;
    }
+   
+   // Test data generation
+   fn generate_test_data(count: usize) -> String {
+       // Generate realistic, deterministic test data
+       // Include metadata for realistic parsing scenarios
+   }
+   
+   // Benchmark groups
+   fn bench_parsing(c: &mut Criterion) {
+       let mut group = c.benchmark_group("log_parsing");
+       
+       for size in [100, 1_000, 10_000, 100_000] {
+           let data = generate_test_data(size);
+           
+           group.bench_with_input(
+               format!("naive_{}", size), 
+               &data,
+               |b, input| b.iter(|| {
+                   black_box(implementations::naive::parse_logs(input))
+               })
+           );
+           
+           // Similar for optimized implementation
+       }
+   }
+   
+   criterion_group!(benches, bench_parsing);
+   criterion_main!(benches);
+   ```
+
+3. **Document Methodology**
+   - Clearly document test environment
+   - Specify warm-up and measurement procedures
+   - Define pass/fail criteria
+
+### 2. Performance Measurement (15 min)
+
+**Goal**: Collect accurate, reproducible performance data.
+
+1. **Run Benchmarks**
+   ```bash
+   # Run with full instrumentation
+   RUSTFLAGS="-C target-cpu=native -C lto=fat" \
+   cargo bench --features=unstable -- --warm-up-time 1 --measurement-time 3
+   ```
+
+2. **Collect System Metrics**
+   - CPU utilization
+   - Memory usage
+   - Cache performance
+   - Thermal conditions
+
+3. **Generate Reports**
+   - HTML reports with Criterion
+   - Flamegraphs for hot paths
+   - Memory profiling with DHAT
+
+### 3. Analysis & Documentation (30 min)
+
+**Goal**: Turn data into actionable insights.
+
+1. **Performance Analysis**
+   - Identify bottlenecks
+   - Compare against theoretical limits
+   - Check for variance and outliers
+
+2. **Create Comprehensive Report**
+   ```markdown
+   ## Benchmark Results
+   
+   ### Key Metrics
+   - **Throughput**: X ops/sec (Y% improvement)
+   - **Latency**: p50=Zμs, p99=Wμs
+   - **Memory**: Peak usage of A MB (B% reduction)
+   
+   ### Optimization Opportunities
+   1. [ ] Data structure improvements
+   2. [ ] Algorithmic optimizations
+   3. [ ] Memory access patterns
+   
+   ### Recommendations
+   - [ ] Adopt zero-copy parsing
+   - [ ] Pre-allocate collections
+   - [ ] Consider SIMD optimizations
+   ```
+
+3. **Update Documentation**
+   - Add to `bench-logs/` with timestamp
+   - Update relevant sections of the book
+   - Create/update performance regressions tests
    ```
 
 4. **Define input scales**

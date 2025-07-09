@@ -7,28 +7,25 @@ This directory contains automated workflows for the Rust Performance Bible bench
 ### 1. `benchmark.yml` - Comprehensive Benchmark Suite
 
 **Triggers:**
-- Push to `main` branch
-- Pull requests
+- Push to `main` branch (only for book/001-memory-is-not-free/)
 - Manual dispatch
 
 **Features:**
 - Runs on multiple OS (Ubuntu, macOS)
 - Tests on stable and nightly Rust
-- Generates flamegraphs and performance profiles
-- Stores historical benchmark data
-- Creates performance dashboard
+- Generates performance profiles
+- Stores historical benchmark data in `book/001-memory-is-not-free/bench-logs/`
+- Creates performance reports in Markdown format
 
 **Outputs:**
 - Benchmark results JSON
 - Performance comparison reports
-- Flamegraphs
-- Binary size analysis
-- Historical tracking on `gh-pages` branch
+- Historical tracking in version control
 
 ### 2. `pr-benchmark.yml` - PR Performance Check
 
 **Triggers:**
-- Pull requests that modify source code
+- Pull requests that modify book/001-memory-is-not-free/
 
 **Features:**
 - Compares PR performance against base branch

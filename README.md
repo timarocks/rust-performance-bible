@@ -11,7 +11,7 @@ The Rust Performance Bible is a collection of hard-earned optimization knowledge
 ## The Crabcore Creed
 
 ![Experience the Ultimate Speed of the Unlimited Power](https://i.makeagif.com/media/5-28-2017/yBzg4n.gif)
-> *[Stick Stickly by Attack Attack!](https://www.youtube.com/watch?v=KDzt6yI3Dw8) is the Offcial Anthem of the Crabcore Creed because it's fast, it's loud, and I’ve listened to it something like 666 times while working on the Crabcore Framework and this Bible.*
+> *[Stick Stickly by Attack Attack!](https://www.youtube.com/watch?v=KDzt6yI3Dw8) is the Official Anthem of the Crabcore Creed because it's fast, it's loud, and I’ve listened to it something like 666 times while working on the Crabcore Framework and this Bible.*
 
 ### In Crabcore We Believe:
 

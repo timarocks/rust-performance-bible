@@ -1,7 +1,7 @@
-//! Memory Pool Implementation
-//! 
-//! A high-performance memory pool for avoiding allocations in hot paths.
-//! Used in article 001-memory-is-not-free.md
+// Memory Pool Implementation
+// 
+// A high-performance memory pool for avoiding allocations in hot paths.
+// Used in article 001-memory-is-not-free.md
 
 use std::cell::RefCell;
 use std::mem::MaybeUninit;

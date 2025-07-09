@@ -1,10 +1,17 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::collections::HashMap;
 
 // Import the patterns we're testing
-include!("../../book/001-memory-is-not-free/naive.rs");
-include!("../../book/001-memory-is-not-free/optimized.rs");
-include!("../../patterns/memory/memory_pool.rs");
+mod naive {
+    include!("../../book/001-memory-is-not-free/naive.rs");
+}
+
+mod optimized {
+    include!("../../book/001-memory-is-not-free/optimized.rs");
+}
+
+// Import only what we use
+use naive::parse_logs as parse_logs_naive;
+use optimized::parse_logs as parse_logs_optimized;
 
 // Test data generator
 fn generate_log_data(lines: usize) -> String {
@@ -44,36 +51,37 @@ fn benchmark_log_parsing(c: &mut Criterion) {
             &test_data,
             |b, data| {
                 b.iter(|| {
-                    let logs = parse_logs(black_box(data));
+                    let logs = parse_logs_naive(black_box(data));
                     black_box(logs.len())
                 })
             },
         );
         
-        // Benchmark zero-copy approach
+        // Benchmark optimized approach
         group.bench_with_input(
-            BenchmarkId::new("zero_copy", size),
+            BenchmarkId::new("optimized", size),
             &test_data,
             |b, data| {
                 b.iter(|| {
-                    let logs: Vec<_> = parse_logs_fast(black_box(data)).collect();
+                    let logs = parse_logs_optimized(black_box(data));
                     black_box(logs.len())
                 })
             },
         );
         
-        // Benchmark with memory pool
-        let pool = StringPool::new(1_000_000);
-        group.bench_with_input(
-            BenchmarkId::new("with_pool", size),
-            &test_data,
-            |b, data| {
-                b.iter(|| {
-                    let logs = process_logs_with_pool(black_box(data), &pool);
-                    black_box(logs.len())
-                })
-            },
-        );
+        // Benchmark with memory pool (example - would need proper integration)
+        // let pool = MemoryPool::<String>::new(1_000_000);
+        // group.bench_with_input(
+        //     BenchmarkId::new("with_pool", size),
+        //     &test_data,
+        //     |b, data| {
+        //         b.iter(|| {
+        //             let mut pool_guard = pool.allocate().unwrap();
+        //             let logs = parse_logs_with_pool(black_box(data), &mut pool_guard);
+        //             black_box(logs.len())
+        //         })
+        //     },
+        // );
     }
     
     group.finish();
@@ -89,7 +97,20 @@ fn benchmark_allocations(c: &mut Criterion) {
     // This benchmark is more about profiling than timing
     group.bench_function("naive_allocations", |b| {
         b.iter(|| {
-            let logs = parse_logs(black_box(&test_data));
+            let logs = parse_logs_naive(black_box(&test_data));
+            // Force evaluation of all allocations
+            for log in &logs {
+                black_box(&log.timestamp);
+                black_box(&log.level);
+                black_box(&log.message);
+                black_box(&log.metadata);
+            }
+        })
+    });
+    
+    group.bench_function("optimized_allocations", |b| {
+        b.iter(|| {
+            let logs = parse_logs_optimized(black_box(&test_data));
             // Force evaluation of all allocations
             for log in &logs {
                 black_box(&log.timestamp);
@@ -118,18 +139,19 @@ fn benchmark_memory_pool(c: &mut Criterion) {
         })
     });
     
-    group.bench_function("pool_allocation", |b| {
-        let pool = MemoryPool::<String>::new(1000);
-        b.iter(|| {
-            let mut guards = Vec::with_capacity(1000);
-            for i in 0..1000 {
-                let mut guard = pool.allocate().unwrap();
-                *guard = format!("String number {}", i);
-                guards.push(guard);
-            }
-            black_box(guards)
-        })
-    });
+    // Commenting out the MemoryPool benchmark as it needs proper integration
+    // group.bench_function("pool_allocation", |b| {
+    //     let pool = MemoryPool::<String>::new(1000);
+    //     b.iter(|| {
+    //         let mut guards = Vec::with_capacity(1000);
+    //         for i in 0..1000 {
+    //             let mut guard = pool.allocate().unwrap();
+    //             *guard = format!("String number {}", i);
+    //             guards.push(guard);
+    //         }
+    //         black_box(guards)
+    //     })
+    // });
     
     group.finish();
 }

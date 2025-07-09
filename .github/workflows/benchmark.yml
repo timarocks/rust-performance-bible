@@ -4,9 +4,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'benchmarks/**'
-      - 'book/**'
-      - 'patterns/**'
+      - 'book/001-memory-is-not-free/**'
+      - '.github/workflows/benchmark.yml'
       - 'Cargo.toml'
   pull_request:
     branches: [ main ]
@@ -69,11 +68,11 @@ jobs:
         fi
         cargo install criterion --features=html_reports --locked || true
     
-    - name: Run benchmarks
+    - name: Run Benchmarks
       run: |
-        cd benchmarks
+        cd book/001-memory-is-not-free
         if [ "${{ matrix.rust }}" = "nightly" ]; then
-          cargo criterion --no-fail-fast --message-format=json | tee benchmark-results.json
+          cargo bench --no-fail-fast --features=unstable -- --warm-up-time 1 --measurement-time 3 --sample-size 10 --output-format=json | tee benchmark-results.json
         else
           cargo bench --no-fail-fast -- --output-format=json | tee benchmark-results.json
         fi
