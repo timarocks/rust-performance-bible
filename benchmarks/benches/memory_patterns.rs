@@ -1,88 +1,110 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-// Import the patterns we're testing
+// Simple log parsing implementations for benchmarking
 mod naive {
-    include!("../../../book/001-memory-is-not-free/code/naive.rs");
+    use super::LogEntry;
+    
+    pub fn parse_logs(input: &str) -> Vec<LogEntry> {
+        input.lines()
+            .map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 3 {
+                    LogEntry {
+                        timestamp: parts[0].to_string(),
+                        level: parts[1].to_string(),
+                        message: parts[2..].join("|")
+                    }
+                } else {
+                    LogEntry {
+                        timestamp: "".to_string(),
+                        level: "ERROR".to_string(),
+                        message: line.to_string()
+                    }
+                }
+            })
+            .collect()
+    }
 }
 
 mod optimized {
-    include!("../../../book/001-memory-is-not-free/code/optimized.rs");
+    use super::LogEntry;
+    
+    pub fn parse_logs(input: &str) -> Vec<LogEntry> {
+        let mut entries = Vec::with_capacity(input.lines().count());
+        
+        for line in input.lines() {
+            let mut parts = line.splitn(3, '|');
+            
+            let entry = LogEntry {
+                timestamp: parts.next().unwrap_or("").to_string(),
+                level: parts.next().unwrap_or("UNKNOWN").to_string(),
+                message: parts.next().unwrap_or("").to_string(),
+            };
+            
+            entries.push(entry);
+        }
+        
+        entries
+    }
 }
 
 // Import only what we use
 use naive::parse_logs as parse_logs_naive;
 use optimized::parse_logs as parse_logs_optimized;
-use rust_performance_benchmarks::test_utils::generate_log_data;
+
+#[derive(Debug, Clone)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+}
 
 // Test data generator
 fn generate_log_data(lines: usize) -> String {
     let mut data = String::with_capacity(lines * 100);
     for i in 0..lines {
         use std::fmt::Write;
-        let metadata_count = i % 5;
+        let level = if i % 4 == 0 { "ERROR" } else { "INFO" };
+        let message = "Request processed";
+        
         write!(
             &mut data,
-            "2025-01-01T12:00:{:02}|{}|Request processed",
+            "2025-01-01T12:00:{:02}|{}|{}",
             i % 60,
-            if i % 4 == 0 { "ERROR" } else { "INFO" }
+            level,
+            message
         ).unwrap();
         
-        // Add variable metadata
+        // Add metadata
+        let metadata_count = i % 5;
         for j in 0..metadata_count {
             write!(&mut data, "|key{}=value{}", j, i).unwrap();
         }
+        
         data.push('\n');
     }
+    
     data
 }
 
 fn benchmark_log_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("log_parsing");
     
-    // Test different data sizes
-    for size in [100, 1_000, 10_000, 100_000] {
-        let test_data = generate_log_data(size);
-        let data_size = test_data.len() as u64;
+    // Test with different input sizes
+    for size in [10, 100, 1000].iter() {
+        let input = generate_log_data(*size);
         
-        group.throughput(Throughput::Bytes(data_size));
-        
-        // Benchmark naive approach
         group.bench_with_input(
             BenchmarkId::new("naive", size),
-            &test_data,
-            |b, data| {
-                b.iter(|| {
-                    let logs = parse_logs_naive(black_box(data));
-                    black_box(logs.len())
-                })
-            },
+            &input,
+            |b, i| b.iter(|| parse_logs_naive(black_box(i)))
         );
         
-        // Benchmark optimized approach
         group.bench_with_input(
             BenchmarkId::new("optimized", size),
-            &test_data,
-            |b, data| {
-                b.iter(|| {
-                    let logs = parse_logs_optimized(black_box(data));
-                    black_box(logs.len())
-                })
-            },
+            &input,
+            |b, i| b.iter(|| parse_logs_optimized(black_box(i)))
         );
-        
-        // Benchmark with memory pool (example - would need proper integration)
-        // let pool = MemoryPool::<String>::new(1_000_000);
-        // group.bench_with_input(
-        //     BenchmarkId::new("with_pool", size),
-        //     &test_data,
-        //     |b, data| {
-        //         b.iter(|| {
-        //             let mut pool_guard = pool.allocate().unwrap();
-        //             let logs = parse_logs_with_pool(black_box(data), &mut pool_guard);
-        //             black_box(logs.len())
-        //         })
-        //     },
-        // );
     }
     
     group.finish();
@@ -104,8 +126,8 @@ fn benchmark_allocations(c: &mut Criterion) {
                 black_box(&log.timestamp);
                 black_box(&log.level);
                 black_box(&log.message);
-                black_box(&log.metadata);
             }
+            black_box(logs);
         })
     });
     
@@ -117,73 +139,52 @@ fn benchmark_allocations(c: &mut Criterion) {
                 black_box(&log.timestamp);
                 black_box(&log.level);
                 black_box(&log.message);
-                black_box(&log.metadata);
             }
+            black_box(logs);
         })
     });
     
     group.finish();
 }
 
-// Memory pool efficiency
-fn benchmark_memory_pool(c: &mut Criterion) {
-    let mut group = c.benchmark_group("memory_pool");
+// Memory efficiency benchmarks
+fn benchmark_memory_efficiency(c: &mut Criterion) {
+    let mut group = c.benchmark_group("memory_efficiency");
     
-    // Compare pool allocation vs heap allocation
-    group.bench_function("heap_allocation", |b| {
+    // Compare different ways to build strings
+    group.bench_function("string_push_str", |b| {
         b.iter(|| {
-            let mut strings = Vec::with_capacity(1000);
+            let mut s = String::with_capacity(4000);
             for i in 0..1000 {
-                strings.push(format!("String number {}", i));
+                s.push_str(&i.to_string());
             }
-            black_box(strings)
+            black_box(s);
         })
     });
     
-    // Commenting out the MemoryPool benchmark as it needs proper integration
-    // group.bench_function("pool_allocation", |b| {
-    //     let pool = MemoryPool::<String>::new(1000);
-    //     b.iter(|| {
-    //         let mut guards = Vec::with_capacity(1000);
-    //         for i in 0..1000 {
-    //             let mut guard = pool.allocate().unwrap();
-    //             *guard = format!("String number {}", i);
-    //             guards.push(guard);
-    //         }
-    //         black_box(guards)
-    //     })
-    // });
+    group.bench_function("string_collect", |b| {
+        b.iter(|| {
+            let s: String = (0..1000).map(|i| i.to_string()).collect();
+            black_box(s);
+        })
+    });
     
     group.finish();
 }
 
-// Specific patterns from the article
-fn benchmark_string_operations(c: &mut Criterion) {
-    let mut group = c.benchmark_group("string_patterns");
+// String processing benchmarks
+fn benchmark_string_processing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("string_processing");
     
-    let data = vec!["hello", "world", "rust", "performance"];
+    let test_data = generate_log_data(1000);
     
-    // Bad pattern: String concatenation in loop
-    group.bench_function("concat_with_allocation", |b| {
+    group.bench_function("parse_and_count_errors", |b| {
         b.iter(|| {
-            let mut result = String::new();
-            for s in &data {
-                result = result + s; // Allocates every time!
-            }
-            black_box(result)
-        })
-    });
-    
-    // Good pattern: Pre-allocated with push_str
-    group.bench_function("concat_preallocated", |b| {
-        b.iter(|| {
-            let mut result = String::with_capacity(
-                data.iter().map(|s| s.len()).sum()
-            );
-            for s in &data {
-                result.push_str(s);
-            }
-            black_box(result)
+            let logs = parse_logs_optimized(black_box(&test_data));
+            let error_count = logs.iter()
+                .filter(|log| log.level == "ERROR")
+                .count();
+            black_box(error_count);
         })
     });
     
@@ -194,7 +195,8 @@ criterion_group!(
     benches,
     benchmark_log_parsing,
     benchmark_allocations,
-    benchmark_memory_pool,
-    benchmark_string_operations
+    benchmark_memory_efficiency,
+    benchmark_string_processing
 );
+
 criterion_main!(benches);

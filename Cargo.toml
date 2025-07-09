@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "benchmarks",
+    "dashboard-generator",
 ]
 resolver = "2"
 
