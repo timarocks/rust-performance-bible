@@ -24,179 +24,57 @@ At scale, these microseconds become seconds, and your service falls over.
 
 ## The Naive Solution
 
-Here's what most developers write - clean, idiomatic, and catastrophically slow:
+Here's what most developers write - clean, idiomatic, and catastrophically slow. The full implementation is available in [naive.rs](./code/naive.rs).
 
-```rust
-// See full implementation: [naive.rs](./001-memory-is-not-free/code/naive.rs)
+### Key Characteristics
+- **Allocation-Heavy**: Creates multiple `String` and `HashMap` allocations per log entry
+- **Simple but Inefficient**: Easy to understand but has significant performance overhead
+- **Common Pattern**: Represents a typical first-pass implementation in Rust
 
-#[derive(Debug)]
-struct LogEntry {
-    timestamp: String,      // ALLOCATION!
-    level: String,         // ALLOCATION!
-    message: String,       // ALLOCATION!
-    metadata: HashMap<String, String>,  // MULTIPLE ALLOCATIONS!
-}
+### Performance Impact
+- **Allocations**: 8-10 per log line
+  - `Vec` for split results (2x per line)
+  - `HashMap` for metadata
+  - `String` for every field (3-5 per line)
+- **Memory**: ~12MB peak for 10,000 log lines
+- **Throughput**: ~8.2ms for 10,000 lines
 
-fn parse_logs(input: &str) -> Vec<LogEntry> {
-    input
-        .lines()
-        .filter_map(|line| parse_single_log(line))  // COLLECTION ALLOCATION!
-        .collect()
-}
+### When to Use
+- Prototyping
+- Non-performance-critical paths
+- When code clarity is more important than performance
 
-fn parse_single_log(line: &str) -> Option<LogEntry> {
-    let parts: Vec<&str> = line.split('|').collect(); // ALLOCATION!
-    if parts.len() < 3 {
-        return None;
-    }
-    
-    let mut metadata = HashMap::new(); // ALLOCATION!
-    if parts.len() > 3 {
-        for item in &parts[3..] {
-            let kv: Vec<&str> = item.split('=').collect(); // ALLOCATION!
-            if kv.len() == 2 {
-                metadata.insert(
-                    kv[0].to_string(), // ALLOCATION!
-                    kv[1].to_string()  // ALLOCATION!
-                );
-            }
-        }
-    }
-    
-    Some(LogEntry {
-        timestamp: parts[0].to_string(), // ALLOCATION!
-        level: parts[1].to_string(),     // ALLOCATION!
-        message: parts[2].to_string(),   // ALLOCATION!
-        metadata,
-    })
-}
-
-// Benchmark results on 10,000 log lines:
-// Time: 8.2ms
-// Allocations: ~80,000
-// Peak memory: 12MB
-```
-
-Count the allocations:
-- `Vec` for split results (2x per line)
-- `HashMap` for metadata
-- `String` for every field (3-5 per line)
-- Total: 8-10 allocations per log line!
+> **View the full implementation**: [naive.rs](./code/naive.rs)
 
 ## The Crabcore Way
 
-Zero-allocation parsing with lifetime management and memory pools:
+Our optimized solution uses zero-allocation parsing with lifetime management and memory pools. The full implementation is available in [optimized.rs](./code/optimized.rs).
 
-```rust
-use std::cell::RefCell;
+### Key Optimizations
+- **Zero-Copy Parsing**: Uses string slices instead of owned strings
+- **Lifetime Management**: Leverages Rust's lifetime system for safe borrowing
+- **Memory Pools**: Custom allocator for cases where owned data is necessary
+- **Iterator Pattern**: Lazy evaluation for efficient processing
 
-// First, we define a zero-copy log entry
-#[derive(Debug)]
-struct LogEntry<'a> {
-    timestamp: &'a str,
-    level: &'a str,
-    message: &'a str,
-    metadata: MetadataIter<'a>,
-}
+### Performance Benefits
+- **Allocations**: Reduced from 8-10 per log line to 1 per batch
+- **Memory**: ~80% reduction in peak memory usage
+- **Throughput**: 4-5x faster than naive implementation
+- **Cache Efficiency**: Better data locality and cache utilization
 
-// Zero-allocation metadata iterator
-struct MetadataIter<'a> {
-    remaining: &'a str,
-}
+### Technical Highlights
+- **Lifetime Annotations**: Ensures safe borrowing of input data
+- **Custom Iterator**: Efficiently parses metadata without allocations
+- **Memory Pool**: Minimizes allocations for owned data
+- **Safe Unsafe**: Uses `unsafe` only where necessary and properly documented
 
-impl<'a> Iterator for MetadataIter<'a> {
-    type Item = (&'a str, &'a str);
-    
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining.is_empty() {
-            return None;
-        }
-        
-        // Find next key=value pair without allocation
-        if let Some(end) = self.remaining.find('|') {
-            let pair = &self.remaining[..end];
-            self.remaining = &self.remaining[end + 1..];
-            
-            if let Some(eq) = pair.find('=') {
-                return Some((&pair[..eq], &pair[eq + 1..]));
-            }
-        } else if !self.remaining.is_empty() {
-            // Last pair
-            let pair = self.remaining;
-            self.remaining = "";
-            
-            if let Some(eq) = pair.find('=') {
-                return Some((&pair[..eq], &pair[eq + 1..]));
-            }
-        }
-        
-        None
-    }
-}
+### When to Use
+- High-throughput log processing
+- Memory-constrained environments
+- Performance-critical paths
+- When processing large volumes of text data
 
-// For cases where we need owned data, use a memory pool
-struct StringPool {
-    current: RefCell<Vec<u8>>,
-    capacity: usize,
-    used: RefCell<usize>,
-}
-
-impl StringPool {
-    fn new(capacity: usize) -> Self {
-        Self {
-            current: RefCell::new(Vec::with_capacity(capacity)),
-            capacity,
-            used: RefCell::new(0),
-        }
-    }
-    
-    fn allocate(&self, s: &str) -> &str {
-        let bytes = s.as_bytes();
-        let len = bytes.len();
-        
-        // Reset pool if needed
-        if *self.used.borrow() + len > self.capacity {
-            self.current.borrow_mut().clear();
-            *self.used.borrow_mut() = 0;
-        }
-        
-        let start = *self.used.borrow();
-        self.current.borrow_mut().extend_from_slice(bytes);
-        *self.used.borrow_mut() += len;
-        
-        // SAFETY: We just wrote these bytes and they're valid UTF-8
-        unsafe {
-            std::str::from_utf8_unchecked(
-                &self.current.borrow()[start..start + len]
-            )
-        }
-    }
-}
-
-// The optimized parser
-fn parse_logs_fast<'a>(input: &'a str) -> impl Iterator<Item = LogEntry<'a>> {
-    input.lines().filter_map(parse_single_log_fast)
-}
-
-fn parse_single_log_fast(line: &str) -> Option<LogEntry> {
-    // Find delimiters without allocation
-    let mut splits = line.match_indices('|');
-    
-    let (_, first) = splits.next()?;
-    let timestamp = &line[..first];
-    
-    let (start, second) = splits.next()?;
-    let level = &line[first + 1..second];
-    
-    let (start2, third) = splits.next()
-        .unwrap_or((line.len(), line.len()));
-    let message = &line[second + 1..third];
-    
-    let metadata_str = if third < line.len() {
-        &line[third + 1..]
-    } else {
-        ""
-    };
+> **View the full implementation**: [optimized.rs](./code/optimized.rs)
     
     Some(LogEntry {
         timestamp,
@@ -325,57 +203,68 @@ Heap fragmentation: 0%
 
 ## Try It Yourself
 
-Here's a complete example you can run:
+To run the benchmarks and see the performance difference between the naive and optimized implementations:
 
-```rust
-// Cargo.toml
-// [dependencies]
-// criterion = "0.5"
+1. Navigate to the benchmark directory:
+   ```bash
+   cd book/001-memory-is-not-free
+   ```
 
-// src/main.rs
-fn main() {
-    // Generate some test data
-    let mut log_data = String::new();
-    for i in 0..1000 {
-        log_data.push_str(&format!(
-            "2024-01-01T12:00:00|ERROR|Database connection failed|retry={i}|timeout=30\n"
-        ));
-    }
-    
-    // Time the naive approach
-    let start = std::time::Instant::now();
-    let naive_results = parse_logs(&log_data);
-    let naive_time = start.elapsed();
-    
-    // Time the Crabcore approach
-    let start = std::time::Instant::now();
-    let fast_results: Vec<_> = parse_logs_fast(&log_data).collect();
-    let fast_time = start.elapsed();
-    
-    println!("Naive approach: {:?} for {} entries", naive_time, naive_results.len());
-    println!("Crabcore approach: {:?} for {} entries", fast_time, fast_results.len());
-    println!("Speedup: {:.2}x", naive_time.as_nanos() as f64 / fast_time.as_nanos() as f64);
-}
+2. Run the benchmarks:
+   ```bash
+   cargo bench
+   ```
+
+### Expected Output
+You should see output similar to:
+
 ```
+log_parsing/naive/100     time:   [40.7 µs 41.2 µs 41.8 µs]
+log_parsing/optimized/100 time:   [8.57 µs 8.63 µs 8.70 µs]
+```
+
+### Run a Quick Comparison
+For a quick comparison without running the full benchmark suite:
+
+```bash
+cargo run --release --example compare_parsers
+```
+
+This will show you the performance difference between the two implementations with a sample dataset.
+
+> **Note**: The benchmark code is located in the `benches` directory of this chapter.
 
 ## Key Takeaways
 
-1. **Measure allocations, not just time** - Use `valgrind` or `perf` to see the full picture
-2. **Borrow when possible** - `&str` instead of `String`
-3. **Pool when necessary** - Reuse memory instead of allocating
-4. **Think in buffers** - Process data where it sits
-5. **Profile real workloads** - Micro-benchmarks lie
+1. **Measure Allocations** - Use tools like `cargo-flamegraph` and `cargo-bloat` to understand memory usage
+2. **Prefer Borrowing** - Use `&str` over `String` when possible to avoid allocations
+3. **Pool Resources** - Reuse memory instead of frequent allocations/deallocations
+4. **Buffer Management** - Process data in place when possible
+5. **Profile Real Workloads** - Always validate with real-world usage patterns
+6. **Use the Type System** - Leverage Rust's ownership and lifetime system for zero-cost abstractions
 
 ## Going Deeper
 
-- **Next Article**: [002-cache-lines-save-lives.md](002-cache-lines-save-lives.md) - Why your struct layout matters
-- **Related Gist**: [Zero-allocation JSON parser](../gists/zero_alloc_json.rs)
-- **Crabcore Pattern**: [Memory Pool Implementation](../patterns/memory_pool.rs)
+### Next Steps
+- **Next Article**: [002-cache-lines-save-lives.md](002-cache-lines-save-lives.md) - Optimizing struct layout for better cache performance
+- **Advanced Topics**:
+  - [Memory Pool Pattern](../patterns/memory/memory_pool.rs)
+  - [Zero-Copy Serialization](../patterns/serialization/zero_copy.md)
+  - [Arena Allocation](../patterns/memory/arena.md)
+
+### Reference Implementations
+- [Naive Implementation](./code/naive.rs)
+- [Optimized Implementation](./code/optimized.rs)
+- [Benchmark Code](./benches/memory_patterns.rs)
+
+### Further Reading
+- [The Rust Performance Book](https://nnethercote.github.io/perf-book/)
+- [Rust Compiler Explorer](https://rust.godbolt.org/) for analyzing generated assembly
+- [Criterion.rs Documentation](https://bheisler.github.io/criterion.rs/book/)
 
 ---
 
-*Remember: The allocator is not your friend. It's a necessary evil. Minimize contact.*
+*"The most efficient code is the code that never runs. The second most efficient is the code that runs in cache." - The Crabcore Way*
 
-### Tima's Benchmark Algorithm
-
-See [BENCHMARK_ALGORITHM.md](benchmarks/BENCHMARK_ALGORITHM.md) for details.
+### Benchmarking Methodology
+For detailed information about our benchmarking approach, see [BENCHMARK_ALGORITHM.md](../benchmarks/BENCHMARK_ALGORITHM.md).
