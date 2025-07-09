@@ -45,7 +45,7 @@ The Rust Performance Bible is a collection of hard-earned optimization knowledge
 
 ```
 rust-performance-bible/
-├── book/          # Core chapters
+├── book/          # Core chapters (see [CHAPTERS.md](./book/CHAPTERS.md))
 ├── patterns/      # Reusable optimization patterns
 ├── gists/         # Quick code snippets  
 ├── benchmarks/    # Benchmark suite
@@ -125,10 +125,27 @@ cargo install flamegraph
 # Linux: perf, valgrind
 ```
 
+## Getting Started
+
+1. Browse the [Table of Contents](./book/CHAPTERS.md) to find topics of interest
+2. Read chapters in order for a structured learning path
+3. Run the examples and benchmarks to see optimizations in action
+
+## Contributing
+
+Contributions are welcome! Please read our [Contribution Guidelines](CONTRIBUTING.md) first.
+
 ## License
 
-MIT - Use this knowledge to make the Rust ecosystem faster.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-> *May your code be fast and your benchmarks true.*
+*"The only way to go fast is to go well." - Robert C. Martin*
+
+---
+
+## GitHub Repository Description
+
+```
+The Rust Performance Bible: A comprehensive guide to writing high-performance Rust code. Covers memory optimization, zero-cost abstractions, async/await, SIMD, lock-free programming, and systems programming techniques. Includes working code examples and benchmarks.
