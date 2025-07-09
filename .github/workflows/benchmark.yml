@@ -74,9 +74,9 @@ jobs:
         fi
         cargo install criterion --features=html_reports --locked || true
     
-    - name: Run Benchmarks
+    - name: Run benchmarks
       run: |
-        cd book/001-memory-is-not-free
+        cd benchmarks
         if [ "${{ matrix.rust }}" = "nightly" ]; then
           cargo bench --no-fail-fast --features=unstable -- --warm-up-time 1 --measurement-time 3 --sample-size 10 --output-format=json | tee benchmark-results.json
         else
@@ -97,6 +97,10 @@ jobs:
     needs: benchmark
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     
     steps:
     - uses: actions/checkout@v4
@@ -106,39 +110,53 @@ jobs:
     - name: Download benchmark results
       uses: actions/download-artifact@v4
       with:
+        name: benchmark-results
         path: benchmark-results
-    
+
     - name: Process benchmark results
       run: |
-        echo "Processing benchmark results..."
-        # Create a summary of the results
-        echo "## Benchmark Results Summary" > summary.md
-        echo "### $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> summary.md
-        echo "" >> summary.md
+        # Create benchmark data directory
+        mkdir -p benchmark-data
         
-        # Process each result file
+        # Process each benchmark result file
         for file in benchmark-results/*.json; do
           if [ -f "$file" ]; then
-            echo "### $(basename "$file")" >> summary.md
-            echo '```' >> summary.md
-            jq -r '.benchmarks[] | "\(.name): \(.mean.time) \(.mean.unit)"' "$file" 2>/dev/null || \
-              echo "No benchmark data found in $file" >> summary.md
-            echo '```' >> summary.md
-            echo "" >> summary.md
+            # Extract benchmark name from filename
+            name=$(basename "$file" .json)
+            
+            # Create a simple markdown report
+            echo "# Benchmark Results for $name" > "benchmark-data/$name.md"
+            echo -e "\n## Raw Data" >> "benchmark-data/$name.md"
+            echo '```json' >> "benchmark-data/$name.md"
+            cat "$file" >> "benchmark-data/$name.md"
+            echo '```' >> "benchmark-data/$name.md"
+            
+            echo "Processed $file"
           fi
         done
         
-        # Check if we have any results
-        if [ ! -s summary.md ]; then
-          echo "No benchmark results found" > summary.md
-        fi
+        # Generate a summary report
+        echo "# Benchmark Results Summary" > "benchmark-data/summary.md"
+        echo "## $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "benchmark-data/summary.md"
+        echo "" >> "benchmark-data/summary.md"
+        
+        # Add a table of contents
+        echo "## Table of Contents" >> "benchmark-data/summary.md"
+        for file in benchmark-results/*.json; do
+          if [ -f "$file" ]; then
+            name=$(basename "$file" .json)
+            echo "- [$name](#$(echo $name | tr '[:upper:]' '[:lower:]' | tr ' ' '-'))" >> "benchmark-data/summary.md"
+          fi
+        done
+        
+        echo "Benchmark results processed"
     
-    - name: Upload results summary
+    - name: Upload processed results
       uses: actions/upload-artifact@v4
       with:
-        name: benchmark-summary
-        path: summary.md
-        retention-days: 7
+        name: benchmark-reports
+        path: benchmark-data/
+        retention-days: 907
     
     - name: Create GitHub Release with results
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -183,84 +201,7 @@ jobs:
         git diff --quiet && git diff --staged --quiet || \
           (git commit -m "Update benchmark history [skip ci]" && git push)
 
-  benchmark-dashboard:
-    name: Generate Performance Dashboard
-    needs: benchmark
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Download benchmark results
-      uses: actions/download-artifact@v4
-      with:
-        path: benchmark-results
-    
-    - name: Generate dashboard
-      run: |
-        # Create a simple HTML dashboard
-        echo "<!DOCTYPE html>" > dashboard.html
-        echo "<html>" >> dashboard.html
-        echo "<head>" >> dashboard.html
-        echo "  <title>Rust Performance Benchmarks</title>" >> dashboard.html
-        echo "  <style>" >> dashboard.html
-        echo "    body { font-family: Arial, sans-serif; margin: 20px; }" >> dashboard.html
-        echo "    .benchmark { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }" >> dashboard.html
-        echo "    .benchmark h3 { margin-top: 0; }" >> dashboard.html
-        echo "    pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }" >> dashboard.html
-        echo "  </style>" >> dashboard.html
-        echo "</head>" >> dashboard.html
-        echo "<body>" >> dashboard.html
-        echo "  <h1>Rust Performance Benchmarks</h1>" >> dashboard.html
-        echo "  <p>Last updated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')</p>" >> dashboard.html
-        
-        # Process each result file
-        for file in benchmark-results/*.json; do
-          if [ -f "$file" ]; then
-            filename=$(basename "$file")
-            echo "  <div class=\"benchmark\">" >> dashboard.html
-            echo "    <h3>${filename}</h3>" >> dashboard.html
-            echo "    <pre>" >> dashboard.html
-            jq -r '.benchmarks[] | "\(.name): \(.mean.time) \(.mean.unit)"' "$file" 2>/dev/null | \
-              sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' >> dashboard.html || \
-              echo "No benchmark data found in $file" >> dashboard.html
-            echo "    </pre>" >> dashboard.html
-            echo "  </div>" >> dashboard.html
-          fi
-        done
-        
-        echo "</body>" >> dashboard.html
-        echo "</html>" >> dashboard.html
-        
-        # Create a simple markdown version as well
-        echo "# Rust Performance Benchmarks" > dashboard.md
-        echo "" >> dashboard.md
-        echo "Last updated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> dashboard.md
-        echo "" >> dashboard.md
-        
-        for file in benchmark-results/*.json; do
-          if [ -f "$file" ]; then
-            echo "## $(basename "$file")" >> dashboard.md
-            echo '```' >> dashboard.md
-            jq -r '.benchmarks[] | "\(.name): \(.mean.time) \(.mean.unit)"' "$file" 2>/dev/null || \
-              echo "No benchmark data found in $file" >> dashboard.md
-            echo '```' >> dashboard.md
-            echo "" >> dashboard.md
-          fi
-        done
-        
-        # Create a directory for the dashboard
-        mkdir -p public
-        mv dashboard.html public/index.html
-        mv dashboard.md public/README.md
-    
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./public
-        keep_files: false
-        force_orphan: true
+  # The dashboard generation has been moved to a separate workflow file:
+  # .github/workflows/benchmark-dashboard.yml
+  # This allows for better separation of concerns and more efficient workflow execution.
+  # The dashboard will be generated and deployed automatically after the benchmarks complete.

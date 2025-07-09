@@ -1,16 +1,20 @@
 [workspace]
 members = [
     "benchmarks",
-    # Add other workspace members here if needed
 ]
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.70.0"
+resolver = "2"
 
 exclude = [
     "**/target",
     "**/Cargo.lock",
     "**/*.rs.bk"
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70.0"
+publish = false
+
+[workspace.dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }

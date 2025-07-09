@@ -1,14 +1,18 @@
 [package]
 name = "rust-performance-benchmarks"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+description = "Benchmarks for the Rust Performance Bible"
 
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-
-[profile.release]
-debug = true  # Keep debug symbols for profiling
+[lib]
+path = "lib.rs"
 
 [[bench]]
 name = "memory_patterns"
 harness = false
+
+[dev-dependencies]
+criterion.workspace = true
+
+[profile.bench]
+debug = true  # Keep debug symbols for profiling

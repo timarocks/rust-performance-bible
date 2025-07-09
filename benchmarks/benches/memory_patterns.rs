@@ -2,16 +2,17 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 // Import the patterns we're testing
 mod naive {
-    include!("../../book/001-memory-is-not-free/naive.rs");
+    include!("../../../book/001-memory-is-not-free/code/naive.rs");
 }
 
 mod optimized {
-    include!("../../book/001-memory-is-not-free/optimized.rs");
+    include!("../../../book/001-memory-is-not-free/code/optimized.rs");
 }
 
 // Import only what we use
 use naive::parse_logs as parse_logs_naive;
 use optimized::parse_logs as parse_logs_optimized;
+use rust_performance_benchmarks::test_utils::generate_log_data;
 
 // Test data generator
 fn generate_log_data(lines: usize) -> String {
@@ -21,7 +22,7 @@ fn generate_log_data(lines: usize) -> String {
         let metadata_count = i % 5;
         write!(
             &mut data,
-            "2024-01-01T12:00:{:02}|{}|Request processed",
+            "2025-01-01T12:00:{:02}|{}|Request processed",
             i % 60,
             if i % 4 == 0 { "ERROR" } else { "INFO" }
         ).unwrap();

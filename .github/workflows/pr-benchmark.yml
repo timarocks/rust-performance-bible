@@ -2,12 +2,13 @@ name: PR Benchmark Check
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'book/**'
       - '.github/workflows/pr-benchmark.yml'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'benchmarks/**'
 
 permissions:
   contents: read
@@ -20,72 +21,155 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
       with:
-        workspaces: ". -> target"
+        toolchain: stable
+        profile: minimal
+        override: true
+        components: rustfmt, clippy
     
-    - name: Run baseline benchmarks
+    - name: Cache cargo registry and target directory
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Install system dependencies
       run: |
-        git checkout ${{ github.event.pull_request.base.sha }}
-        cd book/001-memory-is-not-free
-        cargo bench -- --save-baseline pr-base
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+    
+    - name: Run baseline benchmarks (main branch)
+      id: baseline
+      continue-on-error: true
+      run: |
+        echo "Running benchmarks on base branch (${{ github.base_ref }})..."
+        git fetch origin ${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }} -f
+        git checkout -b base-branch origin/${{ github.base_ref }}
+        
+        cd benchmarks
+        cargo bench --no-fail-fast -- --verbose --output-format=json > ../baseline-results.json
+        
+        # Process the results
+        echo "baseline_results=$(cat ../baseline-results.json | base64 -w 0)" >> $GITHUB_OUTPUT
+      env:
+        RUSTFLAGS: "-C target-cpu=native"
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: 1
     
     - name: Run PR benchmarks
+      id: pr_bench
+      continue-on-error: true
       run: |
-        git checkout ${{ github.event.pull_request.head.sha }}
-        cd book/001-memory-is-not-free
-        cargo bench -- --baseline pr-base --output-format bencher | tee pr-bench-output.txt
-    
-    - name: Parse benchmark results
-      id: bench
-      run: |
-        # Extract performance changes
-        cat benchmarks/pr-bench-output.txt | grep -E "(\+|-)[0-9]+\.[0-9]+%" > perf-summary.txt || true
+        echo "Running benchmarks on PR branch..."
+        git checkout ${{ github.sha }}
         
-        # Check for regressions
-        if grep -E "\+[0-9]+\.[0-9]+%" perf-summary.txt > /dev/null; then
-          echo "regression=true" >> $GITHUB_OUTPUT
-        else
-          echo "regression=false" >> $GITHUB_OUTPUT
-        fi
+        cd benchmarks
+        cargo bench --no-fail-fast -- --verbose --output-format=json > ../pr-results.json
+        
+        # Process the results
+        echo "pr_results=$(cat ../pr-results.json | base64 -w 0)" >> $GITHUB_OUTPUT
+      env:
+        RUSTFLAGS: "-C target-cpu=native"
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: 1
     
-    - name: Comment on PR
-      uses: actions/github-script@v7
+    - name: Compare benchmark results
+      id: compare
+      if: steps.baseline.outcome == 'success' && steps.pr_bench.outcome == 'success'
+      run: |
+        # Decode the base64-encoded benchmark results
+        echo "${{ steps.baseline.outputs.baseline_results }}" | base64 --decode > baseline-results.json
+        echo "${{ steps.pr_bench.outputs.pr_results }}" | base64 --decode > pr-results.json
+        
+        # Install jq if not already installed
+        if ! command -v jq &> /dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y jq
+        fi
+        
+        # Compare the results and generate a markdown report
+        python3 -c "
+import json
+import os
+
+def format_time(ns):
+    for unit in ['ns', 'µs', 'ms', 's']:
+        if ns < 1000 or unit == 's':
+            return f'{ns:.2f} {unit}'
+        ns /= 1000
+
+# Load benchmark results
+with open('baseline-results.json') as f:
+    baseline = {b['name']: b for b in json.load(f)['benchmarks']}
+
+with open('pr-results.json') as f:
+    pr = {b['name']: b for b in json.load(f)['benchmarks']}
+
+# Generate comparison report
+report = ['## Benchmark Comparison\n']
+report.append('| Benchmark | Baseline | PR | Change |')
+report.append('|-----------|----------|----|--------|')
+
+for name in sorted(set(baseline.keys()) | set(pr.keys())):
+    if name in baseline and name in pr:
+        base_time = baseline[name]['mean']['point_estimate']
+        pr_time = pr[name]['mean']['point_estimate']
+        change = (pr_time - base_time) / base_time * 100
+        
+        if abs(change) < 2.0:
+            emoji = '➖'  # No significant change
+        elif change < 0:
+            emoji = '✅'  # Improvement
+        else:
+            emoji = '⚠️'  # Regression
+            
+        report.append(f'| {name} | {format_time(base_time)} | {format_time(pr_time)} | {emoji} {change:+.2f}% |')
+    elif name in baseline:
+        report.append(f'| {name} | {format_time(baseline[name]["mean"]["point_estimate"])} | ❌ Missing | - |')
+    else:
+        report.append(f'| {name} | ❌ Missing | {format_time(pr[name]["mean"]["point_estimate"])} | - |')
+
+# Write the report to a file
+with open('benchmark-report.md', 'w') as f:
+    f.write('\n'.join(report))
+"
+        
+        # Set the report as an output
+        echo "report<<EOF" >> $GITHUB_OUTPUT
+        cat benchmark-report.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
       with:
+        name: benchmark-results
+        path: |
+          baseline-results.json
+          pr-results.json
+          benchmark-report.md
+        retention-days: 7
+    
+    - name: Post benchmark results as PR comment
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request' && steps.compare.outcome == 'success'
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const fs = require('fs');
-          const perfSummary = fs.readFileSync('perf-summary.txt', 'utf8');
-          const hasRegression = '${{ steps.bench.outputs.regression }}' === 'true';
+          const report = fs.readFileSync('benchmark-report.md', 'utf8');
           
-          const icon = hasRegression ? '⚠️' : '✅';
-          const status = hasRegression ? 'Performance Regression Detected' : 'Performance Check Passed';
-          
-          const body = `## ${icon} Benchmark Results: ${status}
-          
-          <details>
-          <summary>Click to see detailed benchmark comparison</summary>
-          
-          \`\`\`
-          ${perfSummary || 'No significant performance changes detected.'}
-          \`\`\`
-          
-          </details>
-          
-          ${hasRegression ? '**Please review the performance impact before merging.**' : ''}
-          
-          ---
-          *Benchmarks run on Ubuntu latest. Results may vary on different hardware.*
-          *See [Benchmark Algorithm](../benchmarks/BENCHMARK_ALGORITHM.md) for methodology.*`;
-          
-          // Find existing comment
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -93,23 +177,30 @@ jobs:
           });
           
           const botComment = comments.find(comment => 
-            comment.user.type === 'Bot' && comment.body.includes('Benchmark Results:')
+            comment.user.type === 'Bot' && 
+            comment.body.includes('## Benchmark Comparison')
           );
           
-          if (botComment) {
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: botComment.id,
-              body: body
-            });
-          } else {
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: body
-            });
+          const comment = {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: report + '\n
+*This comment was automatically generated by GitHub Actions.*',
+          };
+          
+          try {
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                ...comment,
+                comment_id: botComment.id,
+              });
+            } else {
+              await github.rest.issues.createComment(comment);
+            }
+          } catch (error) {
+            console.error('Error posting comment:', error);
+            core.setFailed('Failed to post benchmark results as comment');
           }
     
     - name: Fail if regression
